@@ -1,3 +1,4 @@
+let startFloor = 0;
 console.log("lift.js loaded");
 const FLOOR_BORDER = 1;
 const FLOOR_HEIGHT = 80;
@@ -11,6 +12,7 @@ const floorsInput = document.getElementById("floors");
 const liftsInput = document.getElementById("lifts");
 const generateBtn = document.getElementById("generate");
 const building = document.getElementById("building");
+const MAX_VISIBLE_FLOORS = 20;
 
 const state = {
     floors: 0,
@@ -43,6 +45,9 @@ function createBuilding() {
     shaft.innerHTML = "";
     floorsUI.innerHTML = "";
     const shaftWidth = state.lifts * (LIFT_WIDTH + LIFT_GAP);
+    const visibleFloors = Math.min(state.floors, MAX_VISIBLE_FLOORS);
+    startFloor = Math.max(0, state.floors - visibleFloors);
+
 
     shaft.style.width = `${shaftWidth}px`;
     building.style.width = `${shaftWidth + 200}px`; 
@@ -54,13 +59,13 @@ function createBuilding() {
     shaft.style.position = "relative";
     shaft.style.height = state.floors * FLOOR_HEIGHT + "px";
     shaft.style.width = state.lifts * (LIFT_WIDTH + LIFT_GAP) + "px";
-    shaft.style.height = state.floors * FLOOR_HEIGHT + "px";
+    shaft.style.height = visibleFloors * FLOOR_HEIGHT + "px";
     shaft.style.border = "2px solid black";
 
     floorsUI.style.display = "flex";
     floorsUI.style.flexDirection = "column";
 
-    for (let i = state.floors - 1; i >= 0; i--) {
+    for (let i = state.floors - 1; i >= startFloor; i--) {
         const floor = document.createElement("div");
         floor.className = "floor";
         const label = document.createElement("span");
@@ -87,7 +92,15 @@ function createBuilding() {
         floor.appendChild(label);
         floor.appendChild(btnGroup);
         floorsUI.appendChild(floor);
+
     }
+
+       if (state.floors > MAX_VISIBLE_FLOORS) {
+    showStatus(
+                `Showing top ${MAX_VISIBLE_FLOORS} floors out of ${state.floors}`,
+                "ok"
+            );
+        }
 }
 
 
@@ -102,6 +115,7 @@ function createLifts() {
             id: i,
             currentFloor: 0,
             busy: false,
+            direction: null,
             doorsOpen: false,
             queue: []
         };
@@ -130,10 +144,10 @@ function createLifts() {
 }
 
 function handleLiftCall(floorNumber, buttonElement) {
-    const lift = getNearestFreeLift(floorNumber);
+    const lift = getBestLift(floorNumber);
 
     if (!lift) {
-        showStatus("All lifts are busy","error");
+        showStatus("All lifts are busy. Request queued.", "error");
         return;
     }
 
@@ -155,12 +169,17 @@ function handleLiftCall(floorNumber, buttonElement) {
 function moveLiftWithDoors(lift, request) {
     const targetFloor = request.floor;
     lift.busy = true;
+    lift.direction =
+    request.floor > lift.currentFloor ? "up" : "down";
+
     const liftDiv = document.getElementById(`lift-${lift.id}`);
 
     const floorsToMove = Math.abs(targetFloor - lift.currentFloor);
     const travelTime = floorsToMove * 2;
     liftDiv.style.transition = `bottom ${travelTime}s linear`;
-    liftDiv.style.bottom =  `${targetFloor * FLOOR_HEIGHT - FLOOR_BORDER}px`;
+    const visualFloor = targetFloor - startFloor;
+    liftDiv.style.bottom = `${visualFloor * FLOOR_HEIGHT - FLOOR_BORDER}px`;
+
     
     
     setTimeout(() => {
@@ -209,28 +228,43 @@ function closeDoors(lift) {
 function processLiftQueue(lift) {
     if (lift.queue.length === 0) {
         lift.busy = false;
+        lift.direction = null;
         clearStatus();
         return;
     }
+
+     lift.queue.sort((a, b) => {
+        const dirA = a.floor > lift.currentFloor ? "up" : "down";
+        const dirB = b.floor > lift.currentFloor ? "up" : "down";
+
+        if (dirA === lift.direction && dirB !== lift.direction) return -1;
+        if (dirA !== lift.direction && dirB === lift.direction) return 1;
+
+        return Math.abs(a.floor - lift.currentFloor)
+             - Math.abs(b.floor - lift.currentFloor);
+    });
+
      const nextFloor = lift.queue.shift();    moveLiftWithDoors(lift, nextFloor);
 }
-function getNearestFreeLift(floorNumber) {
-    let nearestLift = null;
-    let minDistance = Infinity;
+function getBestLift(floorNumber) {
+    let bestLift = null;
+    let bestScore = Infinity;
 
     for (const lift of state.liftList) {
-        if (lift.busy) continue;
-
         const distance = Math.abs(lift.currentFloor - floorNumber);
+        const queuePenalty = lift.queue.length * 2;
 
-        if (distance < minDistance) {
-            minDistance = distance;
-            nearestLift = lift;
+        const score = distance + queuePenalty;
+
+        if (score < bestScore) {
+            bestScore = score;
+            bestLift = lift;
         }
-    }  
+    }
 
-    return nearestLift;
+    return bestLift;
 }
+
 
 function showStatus(message, type) {
     status.textContent = message;
