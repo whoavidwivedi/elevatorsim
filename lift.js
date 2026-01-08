@@ -170,8 +170,7 @@ function moveLiftWithDoors(lift, request) {
     const travelTime = floorsToMove * 2;
     liftDiv.style.transition = `bottom ${travelTime}s linear`;
     const visualFloor = targetFloor - startFloor;
-    const CENTER_OFFSET = (FLOOR_HEIGHT - LIFT_HEIGHT) / 2;
-    liftDiv.style.bottom = `${visualFloor * FLOOR_HEIGHT + CENTER_OFFSET - FLOOR_BORDER}px`;
+    liftDiv.style.bottom = `${visualFloor * FLOOR_HEIGHT - FLOOR_BORDER}px`;
 
 
 
@@ -227,26 +226,31 @@ function processLiftQueue(lift) {
         lift.direction = null;
         return;
     }
+    if (!lift.busy) {
+        const next = lift.queue[0];
+        lift.direction = next.floor > lift.currentFloor ? "up" : "down";
+        lift.busy = true;
+    }
+     const directionQueue = lift.queue.filter(req =>
+    lift.direction === "up"
+        ? req.floor > lift.currentFloor
+        : req.floor < lift.currentFloor
+);
+if (directionQueue.length === 0) {
+    lift.direction = lift.direction === "up" ? "down" : "up";
+    return processLiftQueue(lift);
+}
+directionQueue.sort((a, b) =>
+    lift.direction === "up"
+        ? a.floor - b.floor
+        : b.floor - a.floor
+);
 
-     lift.queue.sort((a, b) => {
-       const dirA =
-        a.floor === lift.currentFloor ? null :
-        a.floor > lift.currentFloor ? "up" : "down";
 
-       const dirB =
-        b.floor === lift.currentFloor ? null :
-        b.floor > lift.currentFloor ? "up" : "down";
+const nextStop = directionQueue[0];
+lift.queue = lift.queue.filter(req => req !== nextStop);
 
-
-        if (dirA === lift.direction && dirB !== lift.direction) return -1;
-        if (dirA !== lift.direction && dirB === lift.direction) return 1;
-
-        return Math.abs(a.floor - lift.currentFloor)
-             - Math.abs(b.floor - lift.currentFloor);
-    });
-
-     const nextFloor = lift.queue.shift();    
-     moveLiftWithDoors(lift, nextFloor);
+moveLiftWithDoors(lift, nextStop);
 }
 function getBestLift(floorNumber) {
     let bestLift = null;
@@ -258,7 +262,7 @@ function getBestLift(floorNumber) {
 
         const score = distance + queuePenalty;
 
-        if (score < bestScore) {
+        if (score < bestScore || (score === bestScore && !lift.busy)) {
             bestScore = score;
             bestLift = lift;
         }
